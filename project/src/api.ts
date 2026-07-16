@@ -12,8 +12,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function fetchTickets(): Promise<Ticket[]> {
-  const res = await fetch(`${API_BASE_URL}/api/tickets`);
+export async function fetchTickets(department?: string): Promise<Ticket[]> {
+  const url =
+    department && department !== "ALL"
+      ? `${API_BASE_URL}/api/tickets?department=${encodeURIComponent(department)}`
+      : `${API_BASE_URL}/api/tickets`;
+  const res = await fetch(url);
   return handleResponse<Ticket[]>(res);
 }
 

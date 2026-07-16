@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { ShieldCheck, Search, Send, Sparkles as SparklesIcon, Phone, Mail, MapPin, CircleHelp as HelpCircle, ChevronRight, Loader as Loader2, X, CircleAlert as AlertCircle, ClipboardList, LayoutDashboard, Lock, LogOut, User, CircleCheck as CheckCircle2, Clock, TrendingUp, Copy, Siren, Download, Sparkles, Terminal } from "lucide-react";
 import { fetchTickets, fetchTicketsByUser, searchTickets, createTicketOrIncrement, updateTicketStatus } from "./api";
 import type { Ticket, TicketStatus, Priority } from "./types";
-import { STATUS_META, PRIORITY_META } from "./types";
+import { STATUS_META, PRIORITY_META, DEPARTMENT_OPTIONS } from "./types";
+import { useIdleSecurityLogout } from "./hooks/useIdleSecurityLogout";
 
 const FAQS = [
   { q: "How are grievances routed?", a: "Submissions are classified by our AI router and dispatched to the responsible municipal department within minutes." },
@@ -56,6 +57,9 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [isUserLoggedIn, setIsUserLoggedIn] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [adminDepartment, setAdminDepartment] = useState<string>("ALL");
+  const [adminTickets, setAdminTickets] = useState<Ticket[]>([]);
+  const [adminLoading, setAdminLoading] = useState(false);
   const [authBanner, setAuthBanner] = useState(false);
 
   const handleTabChange = (next: Tab) => {
@@ -73,6 +77,28 @@ export default function App() {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   }, []);
+
+  // ── FEATURE 3: Idle Security Auto-Logout ──────────────────────────
+  // Resets every session-scoped piece of state for whichever role was
+  // logged in (Citizen, Department Admin, or Master Admin) so that the
+  // next render falls straight back to the appropriate login screen.
+  const forceLogoutAll = useCallback(() => {
+    setIsUserLoggedIn(false);
+    setIsAdminLoggedIn(false);
+    setAdminDepartment("ALL");
+    setAdminTickets([]);
+    setUserTickets([]);
+    setShowSubmitModal(false);
+    setConfirmTicket(null);
+    setShowSOS(false);
+    setAuthBanner(false);
+    setSearchResults(null);
+    setQuery("");
+    showToast("You were signed out for security after the tab went inactive.");
+  }, [showToast]);
+
+  const isAnySessionActive = isUserLoggedIn || isAdminLoggedIn;
+  useIdleSecurityLogout(isAnySessionActive, forceLogoutAll);
 
   const loadTickets = useCallback(async () => {
     setLoading(true);
@@ -99,6 +125,24 @@ export default function App() {
       setUserTickets([]);
     }
   }, []);
+
+  const loadAdminTickets = useCallback(async (department: string) => {
+    setAdminLoading(true);
+    try {
+      const data = await fetchTickets(department === "ALL" ? undefined : department);
+      setAdminTickets(data);
+    } catch {
+      setAdminTickets([]);
+    } finally {
+      setAdminLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAdminLoggedIn) {
+      loadAdminTickets(adminDepartment);
+    }
+  }, [isAdminLoggedIn, adminDepartment, loadAdminTickets]);
 
   const runSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
@@ -143,6 +187,9 @@ export default function App() {
     try {
       await updateTicketStatus(ticketId, status);
       await loadTickets();
+      if (isAdminLoggedIn) {
+        await loadAdminTickets(adminDepartment);
+      }
       if (isUserLoggedIn) {
         await loadUserTickets(CITIZEN_EMAIL);
       }
@@ -180,9 +227,14 @@ export default function App() {
       {activeTab === "admin" && (
         isAdminLoggedIn ? (
           <AdminDashboard
-            tickets={tickets}
-            loading={loading}
-            onLogout={() => setIsAdminLoggedIn(false)}
+            tickets={adminTickets}
+            department={adminDepartment}
+            loading={adminLoading}
+            onLogout={() => {
+              setIsAdminLoggedIn(false);
+              setAdminDepartment("ALL");
+              setAdminTickets([]);
+            }}
             showToast={showToast}
             onStatusChange={handleStatusChange}
             onSimulate={async () => {
@@ -194,11 +246,17 @@ export default function App() {
                 submitted_by: "crowd@citizen.gov",
               });
               await loadTickets();
+              await loadAdminTickets(adminDepartment);
               showToast("Live ticket simulated and routed by AI.");
             }}
           />
         ) : (
-          <AdminLoginCard onSuccess={() => setIsAdminLoggedIn(true)} />
+          <AdminLoginCard
+            onSuccess={(department) => {
+              setAdminDepartment(department);
+              setIsAdminLoggedIn(true);
+            }}
+          />
         )
       )}
 
@@ -1001,16 +1059,17 @@ function ContactRow({
 
 /* ── Admin Login ────────────────────────────────────────── */
 
-function AdminLoginCard({ onSuccess }: { onSuccess: () => void }) {
+function AdminLoginCard({ onSuccess }: { onSuccess: (department: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [department, setDepartment] = useState<string>(DEPARTMENT_OPTIONS[0].value);
   const [error, setError] = useState<string | null>(null);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (email.trim() === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
       setError(null);
-      onSuccess();
+      onSuccess(department);
     } else {
       setError("Invalid credentials. Please check your email and password.");
     }
@@ -1028,6 +1087,20 @@ function AdminLoginCard({ onSuccess }: { onSuccess: () => void }) {
             <p className="mt-1 text-sm text-slate-500">Sign in to access the grievance routing dashboard.</p>
           </div>
           <form onSubmit={submit} className="mt-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Login as</label>
+              <select
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none"
+              >
+                {DEPARTMENT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <label className="block text-sm font-medium text-slate-700">Email</label>
               <input
@@ -1072,6 +1145,7 @@ function AdminLoginCard({ onSuccess }: { onSuccess: () => void }) {
 
 function AdminDashboard({
   tickets,
+  department,
   loading,
   onLogout,
   showToast,
@@ -1079,12 +1153,17 @@ function AdminDashboard({
   onStatusChange,
 }: {
   tickets: Ticket[];
+  department: string;
   loading: boolean;
   onLogout: () => void;
   showToast: (msg: string) => void;
   onSimulate: () => Promise<void>;
   onStatusChange: (ticketId: string, status: TicketStatus) => Promise<void>;
 }) {
+  const departmentLabel =
+    DEPARTMENT_OPTIONS.find((d) => d.value === department)?.label ?? "Master Admin";
+  const isMaster = department === "ALL";
+
   const total = tickets.length;
   const pending = tickets.filter((t) => t.status === "pending").length;
   const inReview = tickets.filter((t) => t.status === "in_review").length;
@@ -1128,8 +1207,23 @@ function AdminDashboard({
               <LayoutDashboard className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-900">Admin Dashboard</h2>
-              <p className="text-sm text-slate-500">Monitor and manage all routed grievances.</p>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-slate-900">Admin Dashboard</h2>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+                    isMaster
+                      ? "bg-purple-50 text-purple-700 ring-purple-200"
+                      : "bg-blue-50 text-blue-700 ring-blue-200"
+                  }`}
+                >
+                  {departmentLabel}
+                </span>
+              </div>
+              <p className="text-sm text-slate-500">
+                {isMaster
+                  ? "Monitoring all departments — global view."
+                  : `Scoped to ${departmentLabel} tickets only.`}
+              </p>
             </div>
           </div>
           <button
@@ -1160,7 +1254,9 @@ function AdminDashboard({
           <div className="xl:col-span-3">
             <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-4 border-b border-slate-200">
-                <h3 className="text-base font-semibold text-slate-900">All Grievances</h3>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {isMaster ? "All Grievances" : `${departmentLabel} Grievances`}
+                </h3>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={downloadCSV}

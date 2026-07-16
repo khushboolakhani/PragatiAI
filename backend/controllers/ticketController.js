@@ -26,6 +26,22 @@ function padTicketNumber(id) {
 // Citizen portal's public ticket list.
 // ---------------------------------------------------------------------
 function listTickets(req, res) {
+  const { department } = req.query;
+
+  if (department && department.trim() !== '') {
+    return db.all(
+      'SELECT * FROM tickets WHERE category = ? ORDER BY created_at DESC',
+      [department],
+      (err, rows) => {
+        if (err) {
+          console.error('listTickets (department) error:', err.message);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+        res.json(rows);
+      }
+    );
+  }
+
   db.all('SELECT * FROM tickets ORDER BY created_at DESC', [], (err, rows) => {
     if (err) {
       console.error('listTickets error:', err.message);
