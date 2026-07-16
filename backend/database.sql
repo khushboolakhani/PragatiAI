@@ -20,7 +20,3 @@ CREATE TABLE IF NOT EXISTS tickets (
   ai_priority    TEXT,                          -- AI's baseline priority estimate, before report-count escalation
   created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-
--- Idempotent-ish migration for databases created before ai_priority existed.
--- Safe to fail silently on repeat startups (initSchema logs and continues).
-ALTER TABLE tickets ADD COLUMN ai_priority TEXT;

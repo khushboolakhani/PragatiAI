@@ -1,0 +1,24 @@
+# secrets
+.env
+*.env
+.env.local
+
+# python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# node
+node_modules/
+dist/
+build/
+
+# OS/IDE junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# db
+*.sqlite3

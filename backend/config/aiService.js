@@ -25,7 +25,21 @@ async function analyzeComplaint(text) {
       { timeout: 15000 }
     );
 
-    const { department, confidence, summary, priority } = response.data;
+    const { department, confidence, summary, priority, is_civic_issue } = response.data;
+
+    if (is_civic_issue === false) {
+      // The AI ran fine but judged this isn't a civic/municipal complaint
+      // (e.g. relationship drama, random venting). Don't force a department
+      // guess onto it — let the controller reject the submission outright.
+      return {
+        department: null,
+        confidence: confidence ?? null,
+        summary: summary ?? null,
+        priority: null,
+        isCivicIssue: false,
+        aiAvailable: true,
+      };
+    }
 
     if (!department) {
       throw new Error('AI service response missing department');
@@ -36,11 +50,15 @@ async function analyzeComplaint(text) {
       confidence: confidence ?? null,
       summary: summary ?? null,
       priority: priority ?? 'Low',
+      isCivicIssue: true,
       aiAvailable: true,
     };
   } catch (err) {
     console.error('AI service call failed:', err.message);
-    return { department: 'Unclassified', confidence: null, summary: null, priority: 'Low', aiAvailable: false };
+    // Fail OPEN, not closed: if the AI service itself is unreachable, we
+    // can't judge relevance at all, so we still file the ticket rather than
+    // blocking citizens because of an infra hiccup on our end.
+    return { department: 'Unclassified', confidence: null, summary: null, priority: 'Low', isCivicIssue: true, aiAvailable: false };
   }
 }
 

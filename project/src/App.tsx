@@ -732,8 +732,8 @@ function SubmitModal({
     try {
       await onSubmit({ title, location });
       resetForm();
-    } catch {
-      setErr("Submission failed. Please try again.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Submission failed. Please try again.");
     } finally {
       setSubmitting(false);
     }

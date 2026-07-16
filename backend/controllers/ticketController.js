@@ -117,6 +117,15 @@ async function createOrIncrementTicket(req, res) {
     // Classify first — the AI's department decides the category, and its
     // priority estimate is the baseline before report-count escalation.
     const aiResult = await analyzeComplaint(title);
+
+    if (aiResult.aiAvailable && aiResult.isCivicIssue === false) {
+      return res.status(422).json({
+        error:
+          "This doesn't look like a civic or municipal issue (roads, water, electricity, sanitation, waste, parks, or public transport). " +
+          "Please describe a specific public infrastructure or service problem.",
+      });
+    }
+
     const category = aiResult.department;
 
     db.get(
