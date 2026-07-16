@@ -20,3 +20,19 @@ CREATE TABLE IF NOT EXISTS tickets (
   ai_priority    TEXT,                          -- AI's baseline priority estimate, before report-count escalation
   created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Tracks the last time a ticket was auto-escalated for staleness, so we
+-- don't re-escalate/re-notify on every check cycle.
+ALTER TABLE tickets ADD COLUMN last_escalated_at DATETIME;
+
+-- One row per reminder sent to a department for an overdue ticket.
+-- Powers the "Department Reminders" panel on the admin dashboard.
+CREATE TABLE IF NOT EXISTS reminders (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  ticket_id    TEXT NOT NULL,          -- matches tickets.ticket_id
+  department   TEXT NOT NULL,          -- snapshot of tickets.category at the time
+  days_open    INTEGER NOT NULL,
+  old_priority TEXT NOT NULL,
+  new_priority TEXT NOT NULL,
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+);

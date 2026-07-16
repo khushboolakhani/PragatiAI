@@ -15,6 +15,17 @@ export interface Ticket {
   ai_confidence: number | null;
   ai_summary: string | null;
   created_at: string;
+  last_escalated_at: string | null;
+}
+
+export interface Reminder {
+  id: number;
+  ticket_id: string;
+  department: string;
+  days_open: number;
+  old_priority: Priority;
+  new_priority: Priority;
+  created_at: string;
 }
 
 export const STATUS_META: Record<TicketStatus, { label: string; chip: string; dot: string }> = {

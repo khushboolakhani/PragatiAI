@@ -61,6 +61,7 @@ export default function App() {
   const [adminTickets, setAdminTickets] = useState<Ticket[]>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [authBanner, setAuthBanner] = useState(false);
+  const [pendingTabSwitch, setPendingTabSwitch] = useState<Tab | null>(null);
 
   const handleTabChange = (next: Tab) => {
     setQuery("");
@@ -72,6 +73,31 @@ export default function App() {
     setAuthBanner(false);
     setActiveTab(next);
   };
+
+const requestTabChange = (next: Tab) => {
+  if (next === activeTab) return;
+  const leavingLoggedInSession =
+    activeTab === "admin" ? isAdminLoggedIn : isUserLoggedIn;
+
+  if (leavingLoggedInSession) {
+    setPendingTabSwitch(next); // ask first
+  } else {
+    handleTabChange(next); // nothing to lose, switch immediately
+  }
+};
+
+const confirmTabSwitch = () => {
+  if (activeTab === "admin") {
+    setIsAdminLoggedIn(false);
+    setAdminDepartment("ALL");
+    setAdminTickets([]);
+  } else {
+    setIsUserLoggedIn(false);
+    setUserTickets([]);
+  }
+  if (pendingTabSwitch) handleTabChange(pendingTabSwitch);
+  setPendingTabSwitch(null);
+};
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -170,6 +196,8 @@ export default function App() {
     setShowSubmitModal(true);
   };
 
+  
+
   const handleSubmit = async (data: { title: string; location: string }) => {
     const result = await createTicketOrIncrement({
       ...data,
@@ -203,8 +231,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans antialiased">
-      <Header tab={activeTab} setTab={handleTabChange} />
-
+    <Header tab={activeTab} setTab={requestTabChange} />
       {activeTab === "citizen" && (
         <CitizenPortalView
           query={query}
@@ -272,6 +299,15 @@ export default function App() {
         <SOSModal onClose={() => setShowSOS(false)} />
       )}
 
+      {pendingTabSwitch && (
+  <SwitchTabConfirmModal
+    fromLabel={activeTab === "admin" ? "Admin" : "Citizen"}
+    toLabel={pendingTabSwitch === "admin" ? "Admin" : "Citizen"}
+    onCancel={() => setPendingTabSwitch(null)}
+    onConfirm={confirmTabSwitch}
+  />
+)}
+
       {toast && <Toast message={toast} />}
     </div>
   );
@@ -293,7 +329,7 @@ function Header({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div className="leading-tight">
-              <p className="text-sm font-semibold tracking-tight">Citizen Portal</p>
+              <p className="text-sm font-semibold tracking-tight">Pragati AI</p>
               <p className="text-[11px] text-blue-200/70">AI Grievance Routing</p>
             </div>
           </div>
@@ -405,7 +441,7 @@ function Hero({
             AI-powered routing is live
           </span>
           <h1 className="mt-5 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900">
-            Welcome to the <span className="text-blue-600">Citizen Portal</span>
+            Welcome to <span className="text-blue-600">PragatiAI</span>
           </h1>
           <p className="mt-4 text-base sm:text-lg text-slate-600">
             Report local issues, track their resolution, and let our AI route them to the right department — instantly.
@@ -549,6 +585,49 @@ function SOSModal({ onClose }: { onClose: () => void }) {
         <button onClick={onClose} className="mt-5 w-full rounded-lg border border-slate-200 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50">
           Close
         </button>
+      </div>
+    </div>
+  );
+}
+
+function SwitchTabConfirmModal({
+  fromLabel,
+  toLabel,
+  onCancel,
+  onConfirm,
+}: {
+  fromLabel: string;
+  toLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+        <div className="flex flex-col items-center text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+            <LogOut className="h-7 w-7" />
+          </div>
+          <h3 className="mt-4 text-lg font-bold text-slate-900">Log out of {fromLabel}?</h3>
+          <p className="mt-2 text-sm text-slate-600">
+            Switching to the {toLabel} portal will end your current {fromLabel} session. You'll need to sign in again to come back.
+          </p>
+        </div>
+        <div className="mt-5 flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-lg border border-slate-200 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700"
+          >
+            Log Out & Switch
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1318,6 +1397,21 @@ function AdminDashboard({
                               onChange={onStatusChange}
                             />
                           </td>
+                          <td className="px-4 py-3">
+  {(() => {
+    // 1. Cleaned up to use the correct snake_case date field
+    const d = Math.floor((Date.now() - new Date(t.created_at).getTime()) / 86400000);
+    
+    // 2. Used lowercase "resolved" to match your status type definitions
+    const overdue = d >= 3 && t.status !== "resolved";
+    
+    return (
+      <span className={overdue ? "font-semibold text-red-600 animate-pulse" : "text-slate-500"}>
+        {d}d {overdue && "▲"}
+      </span>
+    );
+  })()}
+</td>
                         </tr>
                       ))}
                     </tbody>

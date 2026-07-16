@@ -1,4 +1,4 @@
-import type { Ticket, TicketStatus } from "./types";
+import type { Ticket, TicketStatus, Reminder } from "./types";
 
 // Set VITE_API_BASE_URL in your .env once you deploy the backend
 // (e.g. to Render). Falls back to localhost for local dev.
@@ -59,4 +59,9 @@ export async function updateTicketStatus(
     body: JSON.stringify({ status }),
   });
   return handleResponse(res);
+}
+
+export async function fetchReminders(): Promise<Reminder[]> {
+  const res = await fetch(`${API_BASE_URL}/api/reminders`);
+  return handleResponse<Reminder[]>(res);
 }

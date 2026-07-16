@@ -7,6 +7,8 @@ const ticketRoutes = require('./routes/ticketRoutes');
 // before routes are hit.
 require('./config/db');
 
+const { escalateStaleTickets } = require('./controllers/ticketController');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -51,6 +53,11 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Something went wrong on the server' });
 });
+
+// Check for stale (3+ day) unresolved tickets every hour and escalate them.
+const ESCALATION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+setInterval(() => escalateStaleTickets(null, null), ESCALATION_INTERVAL_MS);
+escalateStaleTickets(null, null); // also run once on boot
 
 app.listen(PORT, () => {
   console.log(`Grievance backend running on http://localhost:${PORT}`);

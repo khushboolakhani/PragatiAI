@@ -6,6 +6,8 @@ const {
   searchTickets,
   createOrIncrementTicket,
   updateTicketStatus,
+  escalateStaleTickets,   // NEW
+  listReminders,          // NEW
 } = require('../controllers/ticketController');
 
 // IMPORTANT: order matters here. Express matches routes top to bottom,
@@ -27,4 +29,9 @@ router.post('/tickets', createOrIncrementTicket);
 // PUT /api/tickets/:ticketId        -> update status (not yet called by frontend)
 router.put('/tickets/:ticketId', updateTicketStatus);
 
+// POST /api/tickets/escalate  -> manually trigger the staleness check (also called by the scheduler in server.js)
+router.post('/tickets/escalate', escalateStaleTickets);
+
+// GET /api/reminders          -> recent department reminder notices
+router.get('/reminders', listReminders);
 module.exports = router;

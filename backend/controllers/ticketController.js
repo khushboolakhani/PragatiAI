@@ -9,6 +9,13 @@ const { analyzeComplaint } = require('../config/aiService');
 const PRIORITY_RANK = { Low: 0, Medium: 1, High: 2, Critical: 3 };
 const RANK_TO_PRIORITY = ['Low', 'Medium', 'High', 'Critical'];
 
+const STALE_DAYS_THRESHOLD = 3; // tune this
+
+function daysOpen(createdAt) {
+  const created = new Date(createdAt + 'Z'); // SQLite CURRENT_TIMESTAMP is UTC, no offset
+  return (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
+}
+
 function computePriority(basePriority, reportCount) {
   let rank = PRIORITY_RANK[basePriority] ?? PRIORITY_RANK.Low;
   if (reportCount >= 3) rank = Math.max(rank, PRIORITY_RANK.Critical);
@@ -253,10 +260,90 @@ function updateTicketStatus(req, res) {
   });
 }
 
+// ---------------------------------------------------------------------
+// Escalates any unresolved ticket that's been open 3+ days: bumps its
+// priority up one rank (capped at Critical) and logs a reminder notice
+// for that ticket's department. Safe to call repeatedly — a ticket is
+// only escalated again after another full staleness period passes
+// (checked via last_escalated_at), so departments aren't spammed.
+// ---------------------------------------------------------------------
+function escalateStaleTickets(req, res) {
+  db.all(
+    `SELECT * FROM tickets WHERE status != 'resolved'`,
+    [],
+    (err, rows) => {
+      if (err) {
+        console.error('escalateStaleTickets fetch error:', err.message);
+        if (res) return res.status(500).json({ error: 'Internal server error' });
+        return;
+      }
+
+      const toEscalate = rows.filter((t) => {
+        const stale = daysOpen(t.created_at) >= STALE_DAYS_THRESHOLD;
+        if (!stale) return false;
+        if (t.priority === 'Critical') return false; // already maxed
+        // Don't re-escalate the same ticket more than once per threshold window
+        if (t.last_escalated_at && daysOpen(t.last_escalated_at) < STALE_DAYS_THRESHOLD) return false;
+        return true;
+      });
+
+      if (toEscalate.length === 0) {
+        if (res) res.json({ escalated: 0, reminders: [] });
+        return;
+      }
+
+      const reminders = [];
+      toEscalate.forEach((t) => {
+        const rank = Math.min(PRIORITY_RANK[t.priority] + 1, PRIORITY_RANK.Critical);
+        const newPriority = RANK_TO_PRIORITY[rank];
+        const opened = Math.floor(daysOpen(t.created_at));
+
+        db.run(
+          `UPDATE tickets SET priority = ?, last_escalated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [newPriority, t.id]
+        );
+        db.run(
+          `INSERT INTO reminders (ticket_id, department, days_open, old_priority, new_priority)
+           VALUES (?, ?, ?, ?, ?)`,
+          [t.ticket_id, t.category, opened, t.priority, newPriority]
+        );
+
+        reminders.push({
+          ticket_id: t.ticket_id,
+          department: t.category,
+          days_open: opened,
+          old_priority: t.priority,
+          new_priority: newPriority,
+        });
+
+        // TODO: hook a real email/Slack send here once you have an SMTP
+        // or webhook service configured, e.g.:
+        // sendDepartmentEmail(t.category, `Ticket ${t.ticket_id} overdue (${opened}d) — escalated to ${newPriority}`);
+        console.log(`[REMINDER] ${t.ticket_id} → ${t.category} dept: open ${opened}d, escalated ${t.priority} → ${newPriority}`);
+      });
+
+      if (res) res.json({ escalated: reminders.length, reminders });
+    }
+  );
+}
+
+// GET /api/reminders — recent reminder notices, for the admin dashboard
+function listReminders(req, res) {
+  db.all('SELECT * FROM reminders ORDER BY created_at DESC LIMIT 50', [], (err, rows) => {
+    if (err) {
+      console.error('listReminders error:', err.message);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+    res.json(rows);
+  });
+}
+
 module.exports = {
   listTickets,
   listUserTickets,
   searchTickets,
   createOrIncrementTicket,
   updateTicketStatus,
+  escalateStaleTickets,
+  listReminders,
 };

@@ -57,6 +57,18 @@ function initSchema() {
           }
         });
       }
+
+      // NEW: staleness-escalation tracking column
+      const hasLastEscalatedAt = columns.some((c) => c.name === 'last_escalated_at');
+      if (!hasLastEscalatedAt) {
+        db.run('ALTER TABLE tickets ADD COLUMN last_escalated_at DATETIME', (err) => {
+          if (err) {
+            console.error('last_escalated_at migration error:', err.message);
+          } else {
+            console.log('Migrated: added last_escalated_at column to tickets table.');
+          }
+        });
+      }
     });
   });
 }
