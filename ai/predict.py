@@ -146,4 +146,9 @@ if __name__ == "__main__":
         # API mode
         port = int(os.environ.get("PORT", 5001))
         print(f"Starting Grievance AI Service on http://localhost:{port}")
-        app.run(host="0.0.0.0", port=port, debug=True)
+        print("Loading model bundle...")
+        load_bundle()  # warm it up now, not on the first incoming request —
+                        # otherwise that first request pays the joblib.load()
+                        # cost and can blow past the Node backend's timeout
+        print("Model loaded. Ready for requests.")
+        app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)

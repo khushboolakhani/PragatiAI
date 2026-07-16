@@ -11,15 +11,10 @@ export interface Ticket {
   submitted_by: string;
   report_count: number;
   priority: Priority;
+  ai_department: string | null;
+  ai_confidence: number | null;
+  ai_summary: string | null;
   created_at: string;
-}
-
-export interface IssueCategory {
-  id: string;
-  title: string;
-  description: string;
-  icon: string;
-  accent: string;
 }
 
 export const STATUS_META: Record<TicketStatus, { label: string; chip: string; dot: string }> = {
@@ -34,9 +29,3 @@ export const PRIORITY_META: Record<Priority, { label: string; badge: string; pul
   High: { label: "HIGH", badge: "bg-orange-100 text-orange-800 ring-orange-300", pulse: false },
   Critical: { label: "CRITICAL", badge: "bg-red-600 text-white ring-red-700", pulse: true },
 };
-
-export function computePriority(reportCount: number): Priority {
-  if (reportCount >= 3) return "Critical";
-  if (reportCount === 2) return "High";
-  return "Low";
-}

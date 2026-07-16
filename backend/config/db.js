@@ -38,6 +38,26 @@ function initSchema() {
         }
       });
     });
+
+    // Migration for databases created before ai_priority existed — only
+    // added if it's actually missing, so this doesn't log a confusing
+    // "duplicate column" error on every restart once it's been applied.
+    db.all("PRAGMA table_info(tickets)", [], (err, columns) => {
+      if (err) {
+        console.error('Schema check error:', err.message);
+        return;
+      }
+      const hasAiPriority = columns.some((c) => c.name === 'ai_priority');
+      if (!hasAiPriority) {
+        db.run('ALTER TABLE tickets ADD COLUMN ai_priority TEXT', (err) => {
+          if (err) {
+            console.error('ai_priority migration error:', err.message);
+          } else {
+            console.log('Migrated: added ai_priority column to tickets table.');
+          }
+        });
+      }
+    });
   });
 }
 

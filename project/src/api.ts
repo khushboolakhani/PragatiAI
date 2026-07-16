@@ -1,4 +1,4 @@
-import type { Ticket } from "./types";
+import type { Ticket, TicketStatus } from "./types";
 
 // Set VITE_API_BASE_URL in your .env once you deploy the backend
 // (e.g. to Render). Falls back to localhost for local dev.
@@ -34,7 +34,6 @@ export interface SubmitResult {
 
 export async function createTicketOrIncrement(input: {
   title: string;
-  category: string;
   location: string;
   submitted_by: string;
 }): Promise<SubmitResult> {
@@ -44,4 +43,16 @@ export async function createTicketOrIncrement(input: {
     body: JSON.stringify(input),
   });
   return handleResponse<SubmitResult>(res);
+}
+
+export async function updateTicketStatus(
+  ticketId: string,
+  status: TicketStatus
+): Promise<{ message: string; ticketId: string; status: TicketStatus }> {
+  const res = await fetch(`${API_BASE_URL}/api/tickets/${encodeURIComponent(ticketId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  return handleResponse(res);
 }

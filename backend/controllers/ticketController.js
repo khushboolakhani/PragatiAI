@@ -1,12 +1,19 @@
 const db = require('../config/db');
 const { analyzeComplaint } = require('../config/aiService');
 
-// Mirrors computePriority() in the frontend's src/types.ts exactly —
-// keep these in sync if that function ever changes.
-function computePriority(reportCount) {
-  if (reportCount >= 3) return 'Critical';
-  if (reportCount === 2) return 'High';
-  return 'Low';
+// Priority now starts from the AI's own estimate (Low/Medium/High) for the
+// complaint's text, then escalates based on how many citizens have reported
+// the same issue (same AI-determined department + location). Report volume
+// can only push priority UP, never down — 2+ reports guarantees at least
+// High, 3+ guarantees Critical, regardless of what the AI guessed alone.
+const PRIORITY_RANK = { Low: 0, Medium: 1, High: 2, Critical: 3 };
+const RANK_TO_PRIORITY = ['Low', 'Medium', 'High', 'Critical'];
+
+function computePriority(basePriority, reportCount) {
+  let rank = PRIORITY_RANK[basePriority] ?? PRIORITY_RANK.Low;
+  if (reportCount >= 3) rank = Math.max(rank, PRIORITY_RANK.Critical);
+  else if (reportCount === 2) rank = Math.max(rank, PRIORITY_RANK.High);
+  return RANK_TO_PRIORITY[rank];
 }
 
 function padTicketNumber(id) {
@@ -80,82 +87,95 @@ function searchTickets(req, res) {
 
 // ---------------------------------------------------------------------
 // POST /api/tickets
-// Body: { title, category, location, submitted_by }
+// Body: { title, location, submitted_by }
 //
-// Dedup logic (matches frontend's old createTicketOrIncrement exactly):
-//   - If a ticket already exists with the same category + location,
-//     increment its report_count and recompute priority instead of
-//     creating a new row.
-//   - Otherwise, create a new ticket, generate a ticket_id, and call
-//     the AI service (informational — doesn't affect priority or category).
+// The citizen no longer picks a category — the AI classifies the
+// complaint text and its department guess becomes the ticket's category.
+// That also means the AI has to run BEFORE we know the dedup key, so the
+// flow is: classify first, then look up/increment or insert.
 //
-// Response shape: { ticket, isDuplicate } — matches the frontend's
-// SubmitResult interface so api.ts can be a near-drop-in replacement.
+// Dedup logic:
+//   - If a ticket already exists with the same AI-determined category +
+//     location, increment its report_count and recompute priority
+//     (starting from that ticket's original AI priority estimate)
+//     instead of creating a new row.
+//   - Otherwise, create a new ticket with the AI's department, confidence,
+//     summary, and priority estimate all stored on it.
+//
+// Response shape: { ticket, isDuplicate, aiAvailable } — matches the
+// frontend's SubmitResult interface so api.ts can be a near-drop-in
+// replacement.
 // ---------------------------------------------------------------------
-function createOrIncrementTicket(req, res) {
-  const { title, category, location, submitted_by } = req.body;
+async function createOrIncrementTicket(req, res) {
+  try {
+    const { title, location, submitted_by } = req.body;
 
-  if (!title || !category || !location || !submitted_by) {
-    return res.status(400).json({ error: 'title, category, location, and submitted_by are all required' });
-  }
+    if (!title || !location || !submitted_by) {
+      return res.status(400).json({ error: 'title, location, and submitted_by are all required' });
+    }
 
-  db.get(
-    'SELECT * FROM tickets WHERE category = ? AND location = ?',
-    [category, location],
-    (err, existing) => {
-      if (err) {
-        console.error('createOrIncrementTicket lookup error:', err.message);
-        return res.status(500).json({ error: 'Internal server error' });
-      }
+    // Classify first — the AI's department decides the category, and its
+    // priority estimate is the baseline before report-count escalation.
+    const aiResult = await analyzeComplaint(title);
+    const category = aiResult.department;
 
-      if (existing) {
-        const newCount = existing.report_count + 1;
-        const newPriority = computePriority(newCount);
+    db.get(
+      'SELECT * FROM tickets WHERE category = ? AND location = ?',
+      [category, location],
+      (err, existing) => {
+        if (err) {
+          console.error('createOrIncrementTicket lookup error:', err.message);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
 
-        db.run(
-          'UPDATE tickets SET report_count = ?, priority = ? WHERE id = ?',
-          [newCount, newPriority, existing.id],
-          function (err) {
-            if (err) {
-              console.error('createOrIncrementTicket update error:', err.message);
-              return res.status(500).json({ error: 'Internal server error' });
-            }
-            db.get('SELECT * FROM tickets WHERE id = ?', [existing.id], (err, updated) => {
-              if (err) {
-                console.error('createOrIncrementTicket refetch error:', err.message);
-                return res.status(500).json({ error: 'Internal server error' });
-              }
-              res.status(200).json({ ticket: updated, isDuplicate: true });
-            });
-          }
-        );
-        return;
-      }
-
-      // No existing match — create a fresh ticket.
-      const priority = computePriority(1);
-
-      db.run(
-        `INSERT INTO tickets (title, category, location, submitted_by, report_count, priority, status)
-         VALUES (?, ?, ?, ?, 1, ?, 'pending')`,
-        [title, category, location, submitted_by, priority],
-        async function (err) {
-          if (err) {
-            console.error('createOrIncrementTicket insert error:', err.message);
-            return res.status(500).json({ error: 'Internal server error' });
-          }
-
-          const newId = this.lastID;
-          const ticketId = `GRIEV-2026-${padTicketNumber(newId)}`;
-
-          // Fire the AI classification. It's informational only, so a
-          // failure here must never block ticket creation.
-          const aiResult = await analyzeComplaint(title);
+        if (existing) {
+          const newCount = existing.report_count + 1;
+          // Escalate from this ticket group's original AI priority estimate,
+          // not the newest report's, so priority only ever ratchets up.
+          const basePriority = existing.ai_priority || aiResult.priority;
+          const newPriority = computePriority(basePriority, newCount);
 
           db.run(
-            'UPDATE tickets SET ticket_id = ?, ai_department = ?, ai_confidence = ?, ai_summary = ? WHERE id = ?',
-            [ticketId, aiResult.department, aiResult.confidence, aiResult.summary, newId],
-            (err) => {
+            'UPDATE tickets SET report_count = ?, priority = ? WHERE id = ?',
+            [newCount, newPriority, existing.id],
+            function (err) {
+              if (err) {
+                console.error('createOrIncrementTicket update error:', err.message);
+                return res.status(500).json({ error: 'Internal server error' });
+              }
+              db.get('SELECT * FROM tickets WHERE id = ?', [existing.id], (err, updated) => {
+                if (err) {
+                  console.error('createOrIncrementTicket refetch error:', err.message);
+                  return res.status(500).json({ error: 'Internal server error' });
+                }
+                res.status(200).json({ ticket: updated, isDuplicate: true, aiAvailable: aiResult.aiAvailable });
+              });
+            }
+          );
+          return;
+        }
+
+        // No existing match — create a fresh ticket with the AI's own
+        // classification and priority estimate baked in from the start.
+        const priority = computePriority(aiResult.priority, 1);
+
+        db.run(
+          `INSERT INTO tickets
+             (title, category, location, submitted_by, report_count, priority,
+              ai_department, ai_confidence, ai_summary, ai_priority, status)
+           VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 'pending')`,
+          [title, category, location, submitted_by, priority,
+           aiResult.department, aiResult.confidence, aiResult.summary, aiResult.priority],
+          function (err) {
+            if (err) {
+              console.error('createOrIncrementTicket insert error:', err.message);
+              return res.status(500).json({ error: 'Internal server error' });
+            }
+
+            const newId = this.lastID;
+            const ticketId = `GRIEV-2026-${padTicketNumber(newId)}`;
+
+            db.run('UPDATE tickets SET ticket_id = ? WHERE id = ?', [ticketId, newId], (err) => {
               if (err) {
                 console.error('createOrIncrementTicket ticket_id update error:', err.message);
                 return res.status(500).json({ error: 'Internal server error' });
@@ -167,12 +187,17 @@ function createOrIncrementTicket(req, res) {
                 }
                 res.status(201).json({ ticket: created, isDuplicate: false, aiAvailable: aiResult.aiAvailable });
               });
-            }
-          );
-        }
-      );
-    }
-  );
+            });
+          }
+        );
+      }
+    );
+  } catch (err) {
+    // Safety net: an unexpected throw (e.g. before the DB callbacks run)
+    // must never leave the request hanging.
+    console.error('createOrIncrementTicket unexpected error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 }
 
 // ---------------------------------------------------------------------

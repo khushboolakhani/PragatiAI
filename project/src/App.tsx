@@ -1,20 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { ShieldCheck, Search, Send, Truck, Droplets, Zap, Phone, Mail, MapPin, CircleHelp as HelpCircle, ChevronRight, Loader as Loader2, X, CircleAlert as AlertCircle, ClipboardList, LayoutDashboard, Lock, LogOut, User, CircleCheck as CheckCircle2, Clock, TrendingUp, Copy, Siren, Download, Sparkles, Terminal } from "lucide-react";
-import { fetchTickets, fetchTicketsByUser, searchTickets, createTicketOrIncrement } from "./api";
-import type { Ticket, TicketStatus, IssueCategory, Priority } from "./types";
+import { ShieldCheck, Search, Send, Sparkles as SparklesIcon, Phone, Mail, MapPin, CircleHelp as HelpCircle, ChevronRight, Loader as Loader2, X, CircleAlert as AlertCircle, ClipboardList, LayoutDashboard, Lock, LogOut, User, CircleCheck as CheckCircle2, Clock, TrendingUp, Copy, Siren, Download, Sparkles, Terminal } from "lucide-react";
+import { fetchTickets, fetchTicketsByUser, searchTickets, createTicketOrIncrement, updateTicketStatus } from "./api";
+import type { Ticket, TicketStatus, Priority } from "./types";
 import { STATUS_META, PRIORITY_META } from "./types";
-
-const CATEGORIES: IssueCategory[] = [
-  { id: "road", title: "Road Hazards", description: "Potholes, broken signage, unsafe crossings, and obstructed routes.", icon: "truck", accent: "from-blue-500 to-blue-600" },
-  { id: "water", title: "Water Sanitation", description: "Contamination, leaks, low pressure, and drainage overflow.", icon: "droplets", accent: "from-sky-500 to-cyan-600" },
-  { id: "power", title: "Power Grid Issues", description: "Outages, voltage fluctuations, and damaged street lighting.", icon: "zap", accent: "from-amber-500 to-orange-500" },
-];
-
-const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  truck: Truck,
-  droplets: Droplets,
-  zap: Zap,
-};
 
 const FAQS = [
   { q: "How are grievances routed?", a: "Submissions are classified by our AI router and dispatched to the responsible municipal department within minutes." },
@@ -31,11 +19,20 @@ const WARDS = [
   "Ward FN (Matunga/Sion)",
 ];
 
-const SIMULATE_TITLES: Record<string, string[]> = {
-  "Road Hazards": ["Large pothole on Main Street", "Broken traffic signal at intersection", "Cracked pavement near school"],
-  "Water Sanitation": ["Contaminated water supply in sector 4", "Low water pressure in apartment block", "Drainage overflow on 5th street"],
-  "Power Grid Issues": ["Street light outage on Park Avenue", "Voltage fluctuation damaging appliances", "Transformer sparking near park"],
-};
+const SIMULATE_TITLES = [
+  "Large pothole on Main Street",
+  "Broken traffic signal at intersection",
+  "Cracked pavement near school",
+  "Contaminated water supply in sector 4",
+  "Low water pressure in apartment block",
+  "Drainage overflow on 5th street",
+  "Street light outage on Park Avenue",
+  "Voltage fluctuation damaging appliances",
+  "Transformer sparking near park",
+  "Overflowing garbage bins uncollected for a week",
+  "Broken park bench and unsafe playground equipment",
+  "Bus stop shelter damaged, no seating available",
+];
 
 type Tab = "citizen" | "admin";
 
@@ -53,7 +50,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Ticket[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const [modalCategory, setModalCategory] = useState<IssueCategory | null>(null);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [confirmTicket, setConfirmTicket] = useState<Ticket | null>(null);
   const [showSOS, setShowSOS] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -65,7 +62,7 @@ export default function App() {
     setQuery("");
     setSearchResults(null);
     setError(null);
-    setModalCategory(null);
+    setShowSubmitModal(false);
     setConfirmTicket(null);
     setShowSOS(false);
     setAuthBanner(false);
@@ -119,17 +116,17 @@ export default function App() {
     }
   }, []);
 
-  const handleCategorySelect = (cat: IssueCategory) => {
+  const handleReportClick = () => {
     if (!isUserLoggedIn) {
       setAuthBanner(true);
       showToast("Please sign in to your Citizen account to file an official municipal grievance.");
       return;
     }
     setAuthBanner(false);
-    setModalCategory(cat);
+    setShowSubmitModal(true);
   };
 
-  const handleSubmit = async (data: { title: string; category: string; location: string }) => {
+  const handleSubmit = async (data: { title: string; location: string }) => {
     const result = await createTicketOrIncrement({
       ...data,
       submitted_by: CITIZEN_EMAIL,
@@ -138,8 +135,21 @@ export default function App() {
     if (isUserLoggedIn) {
       await loadUserTickets(CITIZEN_EMAIL);
     }
-    setModalCategory(null);
+    setShowSubmitModal(false);
     setConfirmTicket(result.ticket);
+  };
+
+  const handleStatusChange = async (ticketId: string, status: TicketStatus) => {
+    try {
+      await updateTicketStatus(ticketId, status);
+      await loadTickets();
+      if (isUserLoggedIn) {
+        await loadUserTickets(CITIZEN_EMAIL);
+      }
+      showToast(`${ticketId} marked as ${STATUS_META[status].label}.`);
+    } catch {
+      showToast("Failed to update ticket status. Please try again.");
+    }
   };
 
   const displayedTickets = searchResults ?? tickets;
@@ -155,7 +165,7 @@ export default function App() {
           searching={searching}
           results={searchResults}
           error={error}
-          onSelect={handleCategorySelect}
+          onReportClick={handleReportClick}
           tickets={displayedTickets}
           loading={loading}
           isUserLoggedIn={isUserLoggedIn}
@@ -174,19 +184,17 @@ export default function App() {
             loading={loading}
             onLogout={() => setIsAdminLoggedIn(false)}
             showToast={showToast}
+            onStatusChange={handleStatusChange}
             onSimulate={async () => {
-              const cat = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
-              const titles = SIMULATE_TITLES[cat.title] ?? ["Reported issue"];
-              const title = titles[Math.floor(Math.random() * titles.length)];
+              const title = SIMULATE_TITLES[Math.floor(Math.random() * SIMULATE_TITLES.length)];
               const ward = WARDS[Math.floor(Math.random() * WARDS.length)];
               await createTicketOrIncrement({
                 title,
-                category: cat.title,
                 location: ward,
                 submitted_by: "crowd@citizen.gov",
               });
               await loadTickets();
-              showToast("Live ticket simulated and routed successfully.");
+              showToast("Live ticket simulated and routed by AI.");
             }}
           />
         ) : (
@@ -194,8 +202,8 @@ export default function App() {
         )
       )}
 
-      {modalCategory && (
-        <SubmitModal category={modalCategory} onClose={() => setModalCategory(null)} onSubmit={handleSubmit} />
+      {showSubmitModal && (
+        <SubmitModal onClose={() => setShowSubmitModal(false)} onSubmit={handleSubmit} />
       )}
 
       {confirmTicket && (
@@ -263,7 +271,7 @@ function CitizenPortalView({
   searching,
   results,
   error,
-  onSelect,
+  onReportClick,
   tickets,
   loading,
   isUserLoggedIn,
@@ -278,7 +286,7 @@ function CitizenPortalView({
   searching: boolean;
   results: Ticket[] | null;
   error: string | null;
-  onSelect: (c: IssueCategory) => void;
+  onReportClick: () => void;
   tickets: Ticket[];
   loading: boolean;
   isUserLoggedIn: boolean;
@@ -300,7 +308,7 @@ function CitizenPortalView({
         )}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
-            <ActionGrid onSelect={onSelect} isUserLoggedIn={isUserLoggedIn} />
+            <ActionGrid onReportClick={onReportClick} isUserLoggedIn={isUserLoggedIn} />
             <SOSButton onClick={onSOS} />
           </div>
           <div className="lg:col-span-1">
@@ -387,10 +395,10 @@ function Hero({
 }
 
 function ActionGrid({
-  onSelect,
+  onReportClick,
   isUserLoggedIn,
 }: {
-  onSelect: (c: IssueCategory) => void;
+  onReportClick: () => void;
   isUserLoggedIn: boolean;
 }) {
   return (
@@ -398,7 +406,9 @@ function ActionGrid({
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Report an Issue</h2>
-          <p className="mt-1 text-sm text-slate-500">Choose a category to file a new grievance.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Describe what's wrong — our AI reads it and routes it to the right department automatically.
+          </p>
         </div>
         {!isUserLoggedIn && (
           <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
@@ -407,38 +417,33 @@ function ActionGrid({
           </span>
         )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-        {CATEGORIES.map((cat) => {
-          const Icon = ICONS[cat.icon];
-          return (
-            <button
-              key={cat.id}
-              onClick={() => onSelect(cat)}
-              className={`group relative overflow-hidden rounded-2xl bg-white p-7 text-left shadow-md ring-1 ring-slate-200 transition-all ${
-                isUserLoggedIn
-                  ? "hover:-translate-y-1 hover:shadow-xl hover:ring-blue-200"
-                  : "opacity-75 hover:ring-amber-300"
-              }`}
-            >
-              <div className={`absolute -right-6 -top-6 h-24 w-24 rounded-full bg-gradient-to-br ${cat.accent} opacity-10 transition-opacity group-hover:opacity-20`} />
-              <div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${cat.accent} text-white shadow-md`}>
-                <Icon className="h-6 w-6" />
-              </div>
-              <h3 className="mt-5 text-lg font-semibold text-slate-900">{cat.title}</h3>
-              <p className="mt-2 text-sm text-slate-500 leading-relaxed">{cat.description}</p>
-              <span className={`mt-5 inline-flex items-center gap-1 text-sm font-medium transition-all ${
-                isUserLoggedIn ? "text-blue-600 group-hover:gap-2" : "text-slate-400"
-              }`}>
-                {isUserLoggedIn ? (
-                  <>Report now <ChevronRight className="h-4 w-4" /></>
-                ) : (
-                  <><Lock className="h-3.5 w-3.5" /> Sign in to report</>
-                )}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <button
+        onClick={onReportClick}
+        className={`group relative w-full overflow-hidden rounded-2xl bg-white p-8 text-left shadow-md ring-1 ring-slate-200 transition-all ${
+          isUserLoggedIn
+            ? "hover:-translate-y-1 hover:shadow-xl hover:ring-blue-200"
+            : "opacity-75 hover:ring-amber-300"
+        }`}
+      >
+        <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 opacity-10 transition-opacity group-hover:opacity-20" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 text-white shadow-md">
+          <SparklesIcon className="h-7 w-7" />
+        </div>
+        <h3 className="mt-5 text-lg font-semibold text-slate-900">Tell us what happened</h3>
+        <p className="mt-2 max-w-xl text-sm text-slate-500 leading-relaxed">
+          Potholes, water contamination, power outages, garbage collection, damaged parks — just describe
+          the issue in your own words. No need to pick a department; the AI figures that out for you.
+        </p>
+        <span className={`mt-5 inline-flex items-center gap-1 text-sm font-medium transition-all ${
+          isUserLoggedIn ? "text-blue-600 group-hover:gap-2" : "text-slate-400"
+        }`}>
+          {isUserLoggedIn ? (
+            <>Report now <ChevronRight className="h-4 w-4" /></>
+          ) : (
+            <><Lock className="h-3.5 w-3.5" /> Sign in to report</>
+          )}
+        </span>
+      </button>
     </section>
   );
 }
@@ -640,6 +645,50 @@ function StatusChip({ status }: { status: TicketStatus }) {
   );
 }
 
+function StatusSelect({
+  ticketId,
+  status,
+  onChange,
+}: {
+  ticketId: string;
+  status: TicketStatus;
+  onChange: (ticketId: string, status: TicketStatus) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const meta = STATUS_META[status];
+
+  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const next = e.target.value as TicketStatus;
+    if (next === status) return;
+    setSaving(true);
+    try {
+      await onChange(ticketId, next);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="relative inline-flex items-center">
+      <select
+        value={status}
+        onChange={handleChange}
+        disabled={saving}
+        className={`appearance-none cursor-pointer rounded-full pl-3.5 pr-7 py-1 text-xs font-medium ring-1 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:cursor-wait disabled:opacity-70 ${meta.chip}`}
+      >
+        {(Object.keys(STATUS_META) as TicketStatus[]).map((s) => (
+          <option key={s} value={s}>{STATUS_META[s].label}</option>
+        ))}
+      </select>
+      {saving ? (
+        <Loader2 className="pointer-events-none absolute right-1.5 h-3 w-3 animate-spin text-slate-500" />
+      ) : (
+        <ChevronRight className="pointer-events-none absolute right-1.5 h-3 w-3 rotate-90 text-slate-500" />
+      )}
+    </div>
+  );
+}
+
 function PriorityBadge({ priority }: { priority: Priority }) {
   const meta = PRIORITY_META[priority];
   return (
@@ -653,13 +702,11 @@ function PriorityBadge({ priority }: { priority: Priority }) {
 /* ── Submit Modal ───────────────────────────────────────── */
 
 function SubmitModal({
-  category,
   onClose,
   onSubmit,
 }: {
-  category: IssueCategory;
   onClose: () => void;
-  onSubmit: (data: { title: string; category: string; location: string }) => Promise<void>;
+  onSubmit: (data: { title: string; location: string }) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
@@ -683,7 +730,7 @@ function SubmitModal({
     setSubmitting(true);
     setErr(null);
     try {
-      await onSubmit({ title, category: category.title, location });
+      await onSubmit({ title, location });
       resetForm();
     } catch {
       setErr("Submission failed. Please try again.");
@@ -698,8 +745,10 @@ function SubmitModal({
       <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Report {category.title}</h3>
-            <p className="mt-1 text-sm text-slate-500">Fill in the details below to file your grievance.</p>
+            <h3 className="text-lg font-semibold text-slate-900">Report an Issue</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Describe the problem — our AI will route it to the right department.
+            </p>
           </div>
           <button onClick={handleClose} className="text-slate-400 hover:text-slate-600">
             <X className="h-5 w-5" />
@@ -720,13 +769,18 @@ function SubmitModal({
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700">Issue title</label>
-            <input
+            <label className="block text-sm font-medium text-slate-700">Describe the issue</label>
+            <textarea
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Large pothole near Main St"
-              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none"
+              placeholder="e.g. Large pothole near Main St that's damaging cars"
+              rows={3}
+              className="mt-1.5 w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none"
             />
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400">
+              <SparklesIcon className="h-3.5 w-3.5" />
+              Our AI reads this to pick the department and priority automatically.
+            </p>
           </div>
           {err && <p className="text-sm text-red-600">{err}</p>}
           <button
@@ -780,7 +834,11 @@ function ConfirmationModal({
           <CheckCircle2 className="h-12 w-12 text-emerald-600" />
         </div>
         <h3 className="mt-5 text-xl font-bold text-slate-900">Grievance Submitted!</h3>
-        <p className="mt-1 text-sm text-slate-500">Your complaint has been routed to the relevant department.</p>
+        <p className="mt-1 text-sm text-slate-500">
+          {ticket.ai_department
+            ? "Our AI read your complaint and routed it automatically."
+            : "Your complaint has been logged and will be reviewed by staff."}
+        </p>
 
         <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left">
           <div className="flex items-center justify-between">
@@ -788,8 +846,14 @@ function ConfirmationModal({
             <span className="font-mono text-sm font-bold text-blue-600">{ticket.ticket_id}</span>
           </div>
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Category</span>
-            <span className="text-sm text-slate-700">{ticket.category}</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Routed to</span>
+            <span className="flex items-center gap-1.5 text-sm text-slate-700">
+              <SparklesIcon className="h-3.5 w-3.5 text-blue-500" />
+              {ticket.category}
+              {ticket.ai_confidence != null && (
+                <span className="text-xs text-slate-400">({Math.round(ticket.ai_confidence * 100)}%)</span>
+              )}
+            </span>
           </div>
           <div className="mt-2 flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Ward</span>
@@ -1012,12 +1076,14 @@ function AdminDashboard({
   onLogout,
   showToast,
   onSimulate,
+  onStatusChange,
 }: {
   tickets: Ticket[];
   loading: boolean;
   onLogout: () => void;
   showToast: (msg: string) => void;
   onSimulate: () => Promise<void>;
+  onStatusChange: (ticketId: string, status: TicketStatus) => Promise<void>;
 }) {
   const total = tickets.length;
   const pending = tickets.filter((t) => t.status === "pending").length;
@@ -1149,7 +1215,13 @@ function AdminDashboard({
                             </span>
                           </td>
                           <td className="px-4 py-3"><PriorityBadge priority={t.priority} /></td>
-                          <td className="px-4 py-3"><StatusChip status={t.status} /></td>
+                          <td className="px-4 py-3">
+                            <StatusSelect
+                              ticketId={t.ticket_id}
+                              status={t.status}
+                              onChange={onStatusChange}
+                            />
+                          </td>
                         </tr>
                       ))}
                     </tbody>
