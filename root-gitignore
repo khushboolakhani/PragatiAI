@@ -1,0 +1,23 @@
+# Environment variables — never commit secrets
+.env
+.env.local
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Editors
+.vscode/
+.idea/
+
+# Databases
+*.sqlite3
+*.db
+
+# OS
+.DS_Store

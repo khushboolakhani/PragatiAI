@@ -1,0 +1,82 @@
+{
+  "info": {
+    "name": "AI Grievance Routing System - Backend v2",
+    "description": "Matches the actual frontend Ticket schema (title/category/location/submitted_by/report_count/priority).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "ticketId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] } }
+    },
+    {
+      "name": "Submit Ticket (new)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Large pothole on Main Street\",\n  \"category\": \"Road Hazards\",\n  \"location\": \"Ward A (Colaba/Fort)\",\n  \"submitted_by\": \"citizen@gmail.com\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/tickets", "host": ["{{baseUrl}}"], "path": ["api", "tickets"] }
+      }
+    },
+    {
+      "name": "Submit Ticket (duplicate - same category+location)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Another pothole reported nearby\",\n  \"category\": \"Road Hazards\",\n  \"location\": \"Ward A (Colaba/Fort)\",\n  \"submitted_by\": \"neighbour@gmail.com\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/tickets", "host": ["{{baseUrl}}"], "path": ["api", "tickets"] }
+      }
+    },
+    {
+      "name": "Get All Tickets",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/tickets", "host": ["{{baseUrl}}"], "path": ["api", "tickets"] } }
+    },
+    {
+      "name": "Get Tickets by User",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/tickets/user?email=citizen@gmail.com",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "tickets", "user"],
+          "query": [{ "key": "email", "value": "citizen@gmail.com" }]
+        }
+      }
+    },
+    {
+      "name": "Search Tickets",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/tickets/search?q=pothole",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "tickets", "search"],
+          "query": [{ "key": "q", "value": "pothole" }]
+        }
+      }
+    },
+    {
+      "name": "Update Ticket Status",
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"in_review\"\n}" },
+        "url": {
+          "raw": "{{baseUrl}}/api/tickets/{{ticketId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "tickets", "{{ticketId}}"]
+        }
+      }
+    }
+  ]
+}
