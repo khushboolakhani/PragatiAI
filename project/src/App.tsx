@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { ShieldCheck, Search, Send, Sparkles as SparklesIcon, Phone, Mail, MapPin, CircleHelp as HelpCircle, ChevronRight, Loader as Loader2, X, CircleAlert as AlertCircle, ClipboardList, LayoutDashboard, Lock, LogOut, User, CircleCheck as CheckCircle2, Clock, TrendingUp, Copy, Siren, Download, Sparkles, Terminal } from "lucide-react";
+import { ShieldCheck, Search, Send, Sparkles as SparklesIcon, Phone, Mail, MapPin, CircleHelp as HelpCircle, ChevronRight, Loader as Loader2, X, CircleAlert as AlertCircle, ClipboardList, LayoutDashboard, Lock, LogOut, User, CircleCheck as CheckCircle2, Clock, TrendingUp, Copy, Siren, Download, Sparkles } from "lucide-react";
 import { fetchTickets, fetchTicketsByUser, searchTickets, createTicketOrIncrement, updateTicketStatus } from "./api";
 import type { Ticket, TicketStatus, Priority } from "./types";
 import { STATUS_META, PRIORITY_META, DEPARTMENT_OPTIONS } from "./types";
@@ -1329,8 +1329,8 @@ function AdminDashboard({
           })}
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-          <div className="xl:col-span-3">
+        <div className="grid grid-cols-1 gap-6">
+          <div>
             <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-4 border-b border-slate-200">
                 <h3 className="text-base font-semibold text-slate-900">
@@ -1420,87 +1420,6 @@ function AdminDashboard({
               )}
             </div>
           </div>
-
-          <div className="xl:col-span-1">
-            <NLPLogFeed />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── NLP Log Feed ───────────────────────────────────────── */
-
-const NLP_LOG_TEMPLATES = [
-  "[Parsing Intent...]",
-  "[Tokenizing complaint text...]",
-  "[Model Match: Water Dept - 94% Confidence]",
-  "[Model Match: Road Maintenance - 87% Confidence]",
-  "[Model Match: Power Grid Ops - 91% Confidence]",
-  "[Entity Extraction: Location=Ward K-West]",
-  "[Sentiment Analysis: Frustration detected]",
-  "[Routing to department queue...]",
-  "[Priority Assessment: Crowdsourced peak]",
-  "[Ticket GRIEV-2026-{num} dispatched]",
-  "[NLP pipeline complete in 0.3s]",
-  "[De-duplication check: match found, incrementing]",
-];
-
-function NLPLogFeed() {
-  const [logs, setLogs] = useState<string[]>([
-    "[System initialized — NLP router online]",
-    "[Awaiting incoming grievances...]",
-    "[Model Match: Water Dept - 94% Confidence]",
-    "[Routing to department queue...]",
-    "[NLP pipeline complete in 0.3s]",
-    "[Entity Extraction: Location=Ward K-West]",
-    "[Sentiment Analysis: Frustration detected]",
-    "[Ticket GRIEV-2026-409 dispatched]",
-    "[De-duplication check: match found, incrementing]",
-    "[Model Match: Road Maintenance - 87% Confidence]",
-    "[Priority Assessment: Crowdsourced peak]",
-    "[Tokenizing complaint text...]",
-  ]);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const template = NLP_LOG_TEMPLATES[Math.floor(Math.random() * NLP_LOG_TEMPLATES.length)];
-      const msg = template.replace("{num}", String(Math.floor(100 + Math.random() * 900)));
-      setLogs((prev) => [...prev.slice(-30), msg]);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [logs]);
-
-  return (
-    <div className="rounded-2xl bg-[#0b1f3a] shadow-sm ring-1 ring-slate-700 overflow-hidden lg:sticky lg:top-20">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/50 bg-slate-800/50">
-        <Terminal className="h-4 w-4 text-emerald-400" />
-        <h3 className="text-sm font-semibold text-slate-200">System NLP Logs</h3>
-        <span className="ml-auto flex items-center gap-1.5 text-xs text-emerald-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          LIVE
-        </span>
-      </div>
-      <div
-        ref={containerRef}
-        className="h-80 overflow-y-auto p-4 font-mono text-xs leading-relaxed text-emerald-300/80 space-y-1"
-      >
-        {logs.map((log, i) => (
-          <div key={i} className="flex items-start gap-1">
-            <span className="text-emerald-500/50">{String(i + 1).padStart(3, "0")}</span>
-            <span>{log}</span>
-          </div>
-        ))}
-        <div className="flex items-center gap-1 text-emerald-400">
-          <span className="animate-pulse">▊</span>
         </div>
       </div>
     </div>
