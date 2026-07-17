@@ -1,4 +1,4 @@
-import type { Ticket, TicketStatus, Reminder } from "./types";
+import type { Ticket, TicketStatus, Reminder, PublicStats } from "./types";
 
 // Set VITE_API_BASE_URL in your .env once you deploy the backend
 // (e.g. to Render). Falls back to localhost for local dev.
@@ -64,4 +64,11 @@ export async function updateTicketStatus(
 export async function fetchReminders(): Promise<Reminder[]> {
   const res = await fetch(`${API_BASE_URL}/api/reminders`);
   return handleResponse<Reminder[]>(res);
+}
+
+// No auth required — powers the public transparency stats section on the
+// citizen homepage.
+export async function fetchPublicStats(): Promise<PublicStats> {
+  const res = await fetch(`${API_BASE_URL}/api/stats/public`);
+  return handleResponse<PublicStats>(res);
 }

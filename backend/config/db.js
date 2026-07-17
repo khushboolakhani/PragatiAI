@@ -69,6 +69,18 @@ function initSchema() {
           }
         });
       }
+
+      // NEW: resolution-time tracking column (powers public transparency stats)
+      const hasResolvedAt = columns.some((c) => c.name === 'resolved_at');
+      if (!hasResolvedAt) {
+        db.run('ALTER TABLE tickets ADD COLUMN resolved_at DATETIME', (err) => {
+          if (err) {
+            console.error('resolved_at migration error:', err.message);
+          } else {
+            console.log('Migrated: added resolved_at column to tickets table.');
+          }
+        });
+      }
     });
   });
 }

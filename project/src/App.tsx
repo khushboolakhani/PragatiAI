@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { ShieldCheck, Search, Send, Sparkles as SparklesIcon, Phone, Mail, MapPin, CircleHelp as HelpCircle, ChevronRight, Loader as Loader2, X, CircleAlert as AlertCircle, ClipboardList, LayoutDashboard, Lock, LogOut, User, CircleCheck as CheckCircle2, Clock, TrendingUp, Copy, Siren, Download, Sparkles } from "lucide-react";
-import { fetchTickets, fetchTicketsByUser, searchTickets, createTicketOrIncrement, updateTicketStatus } from "./api";
-import type { Ticket, TicketStatus, Priority } from "./types";
+import { fetchTickets, fetchTicketsByUser, searchTickets, createTicketOrIncrement, updateTicketStatus, fetchPublicStats } from "./api";
+import type { Ticket, TicketStatus, Priority, PublicStats } from "./types";
 import { STATUS_META, PRIORITY_META, DEPARTMENT_OPTIONS } from "./types";
 import { useIdleSecurityLogout } from "./hooks/useIdleSecurityLogout";
 
@@ -415,9 +415,139 @@ function CitizenPortalView({
             />
           </div>
         </div>
+        <TransparencyStats />
       </main>
       <FooterRegion tickets={tickets} loading={loading} faqs={FAQS} />
     </>
+  );
+}
+
+/* ── Public Transparency Stats (no login required) ─────── */
+
+function TransparencyStats() {
+  const [stats, setStats] = useState<PublicStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPublicStats()
+      .then((data) => {
+        if (!cancelled) setStats(data);
+      })
+      .catch(() => {
+        if (!cancelled) setErr("Unable to load transparency stats right now.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <section className="mt-12">
+      <div className="mb-6 flex items-center gap-2">
+        <ShieldCheck className="h-5 w-5 text-blue-600" />
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Public Transparency Dashboard</h2>
+          <p className="text-sm text-slate-500">Live civic performance data, open to every citizen — no login required.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center rounded-2xl bg-white py-16 shadow-sm ring-1 ring-slate-200">
+          <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+        </div>
+      ) : err || !stats ? (
+        <div className="rounded-2xl bg-white px-6 py-10 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">
+          {err ?? "No stats available yet."}
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            <StatCard
+              icon={ClipboardList}
+              label="Total Grievances Filed"
+              value={stats.totalTickets}
+              color="bg-blue-50 text-blue-600 ring-blue-100"
+            />
+            <StatCard
+              icon={CheckCircle2}
+              label="Resolved (All Time)"
+              value={stats.totalResolved}
+              color="bg-emerald-50 text-emerald-600 ring-emerald-100"
+            />
+          </div>
+
+          <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200">
+              <h3 className="text-sm font-semibold text-slate-900">By Department</h3>
+            </div>
+            {stats.byDepartment.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                <ClipboardList className="h-8 w-8 mb-2" />
+                <p className="text-sm">No grievances have been submitted yet.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Department</th>
+                      <th className="px-4 py-3 font-medium text-center">Total</th>
+                      <th className="px-4 py-3 font-medium text-center">Pending</th>
+                      <th className="px-4 py-3 font-medium text-center">In Review</th>
+                      <th className="px-4 py-3 font-medium text-center">Resolved</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {stats.byDepartment.map((d) => (
+                      <tr key={d.department} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-medium text-slate-700">{d.department}</td>
+                        <td className="px-4 py-3 text-center text-slate-600">{d.total}</td>
+                        <td className="px-4 py-3 text-center text-slate-600">{d.pending}</td>
+                        <td className="px-4 py-3 text-center text-slate-600">{d.inReview}</td>
+                        <td className="px-4 py-3 text-center text-slate-600">{d.resolved}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-slate-400">
+            Last updated {new Date(stats.generatedAt).toLocaleString()}.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  color,
+  sub,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string | number;
+  color: string;
+  sub?: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <div className={`flex h-10 w-10 items-center justify-center rounded-lg ring-1 ${color}`}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <p className="mt-3 text-2xl font-bold text-slate-900">{value}</p>
+      <p className="text-sm text-slate-500">{label}</p>
+      {sub && <p className="mt-0.5 text-xs text-slate-400">{sub}</p>}
+    </div>
   );
 }
 
@@ -696,6 +826,9 @@ function TrackingPanel({
                       </div>
                       <StatusChip status={t.status} />
                     </div>
+                    <div className="mt-2.5">
+                      <SlaBadge createdAt={t.created_at} status={t.status} />
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -833,6 +966,87 @@ function PriorityBadge({ priority }: { priority: Priority }) {
       {meta.pulse && <span className="h-1.5 w-1.5 rounded-full bg-red-300 animate-ping" />}
       {meta.label}
     </span>
+  );
+}
+
+/* ── SLA Countdown Badge ────────────────────────────────── */
+// Mirrors the backend's 3-day staleness threshold (see
+// STALE_DAYS_THRESHOLD in ticketController.js) so the countdown shown
+// here always lines up with when the escalation job will actually fire.
+const SLA_THRESHOLD_DAYS = 3;
+
+type SlaState = "resolved" | "overdue" | "urgent" | "ok";
+
+interface SlaInfo {
+  daysOpen: number;
+  progress: number; // 0–1, clamped, for the bar width
+  label: string;
+  state: SlaState;
+}
+
+function getSlaInfo(createdAt: string, status: TicketStatus): SlaInfo {
+  // SQLite's CURRENT_TIMESTAMP has no offset but is UTC — same fix-up
+  // used by daysOpen() on the backend.
+  const created = new Date(createdAt.endsWith("Z") ? createdAt : `${createdAt}Z`).getTime();
+  const daysOpenExact = Math.max(0, (Date.now() - created) / 86400000);
+  const daysOpen = Math.floor(daysOpenExact);
+
+  if (status === "resolved") {
+    return { daysOpen, progress: 1, label: "Resolved", state: "resolved" };
+  }
+
+  const remaining = SLA_THRESHOLD_DAYS - daysOpenExact;
+  const progress = Math.min(1, daysOpenExact / SLA_THRESHOLD_DAYS);
+
+  if (remaining <= 0) {
+    const overdueBy = Math.floor(-remaining);
+    return {
+      daysOpen,
+      progress: 1,
+      label: overdueBy < 1 ? "Escalation due today" : `Escalated · ${overdueBy}d overdue`,
+      state: "overdue",
+    };
+  }
+
+  const daysLeft = Math.ceil(remaining);
+  return {
+    daysOpen,
+    progress,
+    label: daysLeft <= 1 ? "< 1 day until escalation" : `${daysLeft} days until escalation`,
+    state: remaining <= 1 ? "urgent" : "ok",
+  };
+}
+
+function SlaBadge({ createdAt, status }: { createdAt: string; status: TicketStatus }) {
+  const sla = getSlaInfo(createdAt, status);
+
+  if (sla.state === "resolved") {
+    return (
+      <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+        <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />
+        Resolved
+      </div>
+    );
+  }
+
+  const barColor =
+    sla.state === "overdue" ? "bg-red-500" : sla.state === "urgent" ? "bg-orange-500" : "bg-blue-500";
+  const textColor =
+    sla.state === "overdue" ? "text-red-600" : sla.state === "urgent" ? "text-orange-600" : "text-slate-500";
+
+  return (
+    <div className="w-full min-w-[8rem] max-w-[10rem]">
+      <div className={`flex items-center gap-1 text-xs font-medium ${textColor}`}>
+        {sla.state === "overdue" && <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />}
+        <span className={sla.state === "overdue" ? "animate-pulse" : ""}>{sla.label}</span>
+      </div>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+        <div
+          className={`h-full rounded-full transition-all ${barColor}`}
+          style={{ width: `${Math.round(sla.progress * 100)}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1375,6 +1589,7 @@ function AdminDashboard({
                         <th className="px-4 py-3 font-medium text-center">Reports</th>
                         <th className="px-4 py-3 font-medium">Priority</th>
                         <th className="px-4 py-3 font-medium">Status</th>
+                        <th className="px-4 py-3 font-medium">SLA / Escalation</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1398,20 +1613,8 @@ function AdminDashboard({
                             />
                           </td>
                           <td className="px-4 py-3">
-  {(() => {
-    // 1. Cleaned up to use the correct snake_case date field
-    const d = Math.floor((Date.now() - new Date(t.created_at).getTime()) / 86400000);
-    
-    // 2. Used lowercase "resolved" to match your status type definitions
-    const overdue = d >= 3 && t.status !== "resolved";
-    
-    return (
-      <span className={overdue ? "font-semibold text-red-600 animate-pulse" : "text-slate-500"}>
-        {d}d {overdue && "▲"}
-      </span>
-    );
-  })()}
-</td>
+                            <SlaBadge createdAt={t.created_at} status={t.status} />
+                          </td>
                         </tr>
                       ))}
                     </tbody>

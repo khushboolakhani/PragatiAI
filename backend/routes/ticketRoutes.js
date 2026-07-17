@@ -8,6 +8,7 @@ const {
   updateTicketStatus,
   escalateStaleTickets,   // NEW
   listReminders,          // NEW
+  getPublicStats,         // NEW
 } = require('../controllers/ticketController');
 
 // IMPORTANT: order matters here. Express matches routes top to bottom,
@@ -34,4 +35,8 @@ router.post('/tickets/escalate', escalateStaleTickets);
 
 // GET /api/reminders          -> recent department reminder notices
 router.get('/reminders', listReminders);
+
+// GET /api/stats/public       -> public, no-login-required transparency stats
+router.get('/stats/public', getPublicStats);
+
 module.exports = router;

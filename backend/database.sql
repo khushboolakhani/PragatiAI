@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS tickets (
 -- don't re-escalate/re-notify on every check cycle.
 ALTER TABLE tickets ADD COLUMN last_escalated_at DATETIME;
 
+-- Timestamp of the moment a ticket first transitioned into 'resolved'.
+-- Set by updateTicketStatus (and cleared if the ticket is reopened).
+-- Powers avg. resolution time in the public transparency stats endpoint.
+ALTER TABLE tickets ADD COLUMN resolved_at DATETIME;
+
 -- One row per reminder sent to a department for an overdue ticket.
 -- Powers the "Department Reminders" panel on the admin dashboard.
 CREATE TABLE IF NOT EXISTS reminders (

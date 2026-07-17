@@ -28,6 +28,25 @@ export interface Reminder {
   created_at: string;
 }
 
+// Read-only, no-login-required aggregate stats — see GET /api/stats/public
+export interface DepartmentStats {
+  department: string;
+  total: number;
+  pending: number;
+  inReview: number;
+  resolved: number;
+  avgResolutionDays: number | null;
+}
+
+export interface PublicStats {
+  generatedAt: string;
+  totalTickets: number;
+  totalResolved: number;
+  resolvedThisMonth: number;
+  avgResolutionDays: number | null;
+  byDepartment: DepartmentStats[];
+}
+
 export const STATUS_META: Record<TicketStatus, { label: string; chip: string; dot: string }> = {
   pending: { label: "Pending", chip: "bg-amber-50 text-amber-700 ring-amber-200", dot: "bg-amber-500" },
   in_review: { label: "In Review", chip: "bg-sky-50 text-sky-700 ring-sky-200", dot: "bg-sky-500" },

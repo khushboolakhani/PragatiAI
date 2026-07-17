@@ -248,16 +248,30 @@ function updateTicketStatus(req, res) {
     return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
   }
 
-  db.run('UPDATE tickets SET status = ? WHERE ticket_id = ?', [status, ticketId], function (err) {
-    if (err) {
-      console.error('updateTicketStatus error:', err.message);
-      return res.status(500).json({ error: 'Internal server error' });
+  // resolved_at is set the moment a ticket newly becomes 'resolved', and
+  // cleared if it's ever reopened — so avg. resolution time (used by the
+  // public stats endpoint) only reflects tickets that are currently closed.
+  db.run(
+    `UPDATE tickets
+       SET status = ?,
+           resolved_at = CASE
+             WHEN ? = 'resolved' AND status != 'resolved' THEN CURRENT_TIMESTAMP
+             WHEN ? != 'resolved' THEN NULL
+             ELSE resolved_at
+           END
+     WHERE ticket_id = ?`,
+    [status, status, status, ticketId],
+    function (err) {
+      if (err) {
+        console.error('updateTicketStatus error:', err.message);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Ticket not found' });
+      }
+      res.json({ message: 'Status updated', ticketId, status });
     }
-    if (this.changes === 0) {
-      return res.status(404).json({ error: 'Ticket not found' });
-    }
-    res.json({ message: 'Status updated', ticketId, status });
-  });
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -338,6 +352,82 @@ function listReminders(req, res) {
   });
 }
 
+// ---------------------------------------------------------------------
+// GET /api/stats/public
+// No login required. Read-only aggregate view for public transparency:
+// total/resolved tickets, tickets resolved this calendar month, overall
+// avg. resolution time, and the same broken down per department.
+// "Avg. resolution time" is only computed over tickets that have a
+// resolved_at timestamp (i.e. have been resolved since this feature
+// shipped) — older resolved tickets without one are excluded from the
+// average but still counted in resolved totals.
+// ---------------------------------------------------------------------
+function getPublicStats(req, res) {
+  const overallSql = `
+    SELECT
+      COUNT(*) AS total_tickets,
+      SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS total_resolved,
+      SUM(
+        CASE WHEN status = 'resolved' AND resolved_at IS NOT NULL
+             AND strftime('%Y-%m', resolved_at) = strftime('%Y-%m', 'now')
+        THEN 1 ELSE 0 END
+      ) AS resolved_this_month,
+      AVG(
+        CASE WHEN status = 'resolved' AND resolved_at IS NOT NULL
+        THEN (julianday(resolved_at) - julianday(created_at)) END
+      ) AS avg_resolution_days
+    FROM tickets
+  `;
+
+  const byDepartmentSql = `
+    SELECT
+      category AS department,
+      COUNT(*) AS total,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END) AS in_review,
+      SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS resolved,
+      AVG(
+        CASE WHEN status = 'resolved' AND resolved_at IS NOT NULL
+        THEN (julianday(resolved_at) - julianday(created_at)) END
+      ) AS avg_resolution_days
+    FROM tickets
+    GROUP BY category
+    ORDER BY total DESC
+  `;
+
+  db.get(overallSql, [], (err, overall) => {
+    if (err) {
+      console.error('getPublicStats overall error:', err.message);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    db.all(byDepartmentSql, [], (err, byDepartment) => {
+      if (err) {
+        console.error('getPublicStats byDepartment error:', err.message);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      const round1 = (n) => (n === null || n === undefined ? null : Math.round(n * 10) / 10);
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        totalTickets: overall.total_tickets || 0,
+        totalResolved: overall.total_resolved || 0,
+        resolvedThisMonth: overall.resolved_this_month || 0,
+        avgResolutionDays: round1(overall.avg_resolution_days),
+        byDepartment: byDepartment.map((d) => ({
+          department: d.department,
+          total: d.total,
+          pending: d.pending,
+          inReview: d.in_review,
+          resolved: d.resolved,
+          avgResolutionDays: round1(d.avg_resolution_days),
+        })),
+      });
+    });
+  });
+}
+
 module.exports = {
   listTickets,
   listUserTickets,
@@ -346,4 +436,5 @@ module.exports = {
   updateTicketStatus,
   escalateStaleTickets,
   listReminders,
+  getPublicStats,
 };
